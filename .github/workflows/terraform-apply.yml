@@ -77,19 +77,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ACCOUNT="${{ steps.tfstate_dev.outputs.storage_account }}"
+          KEY="${{ steps.tfstate_dev.outputs.access_key }}"
+          CONTAINER="${{ steps.tfstate_dev.outputs.container }}"
+          BLOB="dev.terraform.tfstate"
+
+          # Attempt to break any stale lease on the state blob, then wait until it's unlocked.
           az storage blob lease break \
-            --account-name "${{ steps.tfstate_dev.outputs.storage_account }}" \
-            --account-key "${{ steps.tfstate_dev.outputs.access_key }}" \
-            --container-name "${{ steps.tfstate_dev.outputs.container }}" \
-            --blob-name "dev.terraform.tfstate" \
+            --account-name "${ACCOUNT}" \
+            --account-key "${KEY}" \
+            --container-name "${CONTAINER}" \
+            --blob-name "${BLOB}" \
             --break-period 0 || true
+
+          for i in $(seq 1 30); do
+            STATUS="$(az storage blob show --account-name "${ACCOUNT}" --account-key "${KEY}" --container-name "${CONTAINER}" --name "${BLOB}" --query "properties.lease.status" -o tsv || true)"
+            if [[ "${STATUS}" == "unlocked" || -z "${STATUS}" ]]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "State blob lease is still locked after waiting." >&2
+          exit 1
 
           # Fallback: force-unlock a known stale lock id if it still exists.
           terraform -chdir=infra/terraform/envs/dev force-unlock -force "09f38d6b-b63c-c5ee-215a-29f84dc82e26" || true
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
-        run: terraform apply -auto-approve -lock=false -replace=random_string.suffix
+        run: terraform apply -auto-approve -lock-timeout=10m -replace=random_string.suffix
 
   apply-prod:
     runs-on: ubuntu-latest
