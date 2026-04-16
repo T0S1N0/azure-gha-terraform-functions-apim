@@ -43,7 +43,7 @@ variable "apim_publisher_email" {
 variable "enable_policy" {
   type        = bool
   description = "Enable tag-requirement Azure Policy assignment."
-  default     = true
+  default     = false
 }
 
 variable "enable_rbac_role_assignments" {

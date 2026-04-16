@@ -56,6 +56,7 @@ module "network" {
   resource_group_name = module.rg.name
   location            = module.rg.location
   tags                = local.tags
+  address_space       = ["10.20.0.0/16"]
 
   subnets = {
     "snet-functions" = {
