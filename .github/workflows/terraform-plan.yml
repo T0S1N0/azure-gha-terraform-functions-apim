@@ -34,6 +34,25 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Resolve Terraform backend (dev)
+        id: tfstate_dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          RG="${{ vars.TFSTATE_RESOURCE_GROUP || secrets.TFSTATE_RESOURCE_GROUP || 'rg-tfstate' }}"
+          CONTAINER="${{ vars.TFSTATE_CONTAINER || secrets.TFSTATE_CONTAINER || 'tfstate' }}"
+          SA="${{ vars.TFSTATE_STORAGE_ACCOUNT || secrets.TFSTATE_STORAGE_ACCOUNT }}"
+          if [[ -z "${SA}" ]]; then
+            SA="$(az storage account list -g "${RG}" --query "[?tags.purpose=='terraform-state'].name | [0]" -o tsv)"
+          fi
+          if [[ -z "${SA}" ]]; then
+            echo "Could not resolve TFSTATE storage account in resource group ${RG}." >&2
+            exit 1
+          fi
+          echo "rg=${RG}" >> "$GITHUB_OUTPUT"
+          echo "container=${CONTAINER}" >> "$GITHUB_OUTPUT"
+          echo "storage_account=${SA}" >> "$GITHUB_OUTPUT"
+
       - name: Terraform fmt (check)
         working-directory: infra/terraform/envs/dev
         run: terraform fmt -check -recursive
@@ -42,9 +61,9 @@ jobs:
         working-directory: infra/terraform/envs/dev
         run: |
           terraform init \
-            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP || secrets.TFSTATE_RESOURCE_GROUP || 'rg-tfstate' }}" \
-            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT || secrets.TFSTATE_STORAGE_ACCOUNT }}" \
-            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER || secrets.TFSTATE_CONTAINER || 'tfstate' }}" \
+            -backend-config="resource_group_name=${{ steps.tfstate_dev.outputs.rg }}" \
+            -backend-config="storage_account_name=${{ steps.tfstate_dev.outputs.storage_account }}" \
+            -backend-config="container_name=${{ steps.tfstate_dev.outputs.container }}" \
             -backend-config="use_azuread_auth=true"
 
       - name: Terraform validate
