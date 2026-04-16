@@ -1,11 +1,9 @@
 name: app-build-deploy
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "app/functions/**"
-      - ".github/workflows/app-build-deploy.yml"
+  workflow_run:
+    workflows: ["terraform-apply"]
+    types: [completed]
   workflow_dispatch: {}
 
 permissions:
@@ -16,6 +14,7 @@ jobs:
   deploy-dev:
     runs-on: ubuntu-latest
     environment: dev
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
