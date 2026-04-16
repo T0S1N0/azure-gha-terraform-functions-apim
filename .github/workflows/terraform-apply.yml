@@ -103,7 +103,7 @@ jobs:
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
-        run: terraform apply -auto-approve -lock-timeout=10m -replace=random_string.suffix
+        run: terraform apply -auto-approve -lock-timeout=10m
 
   apply-prod:
     runs-on: ubuntu-latest
