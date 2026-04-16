@@ -118,6 +118,7 @@ module "func" {
 }
 
 module "sb_sender_rbac" {
+  count                = var.enable_rbac_role_assignments ? 1 : 0
   source               = "../../modules/rbac"
   principal_id         = module.func.principal_id
   scope                = module.sb.namespace_id

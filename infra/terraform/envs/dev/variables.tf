@@ -46,3 +46,9 @@ variable "enable_policy" {
   default     = false
 }
 
+variable "enable_rbac_role_assignments" {
+  type        = bool
+  description = "Enable creation of Azure RBAC role assignments (requires Owner/User Access Administrator permissions)."
+  default     = false
+}
+
