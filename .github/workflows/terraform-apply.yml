@@ -30,7 +30,7 @@ jobs:
   apply-dev:
     runs-on: ubuntu-latest
     environment: dev
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.environment == 'dev' || inputs.environment == 'both' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.environment == 'dev' || inputs.environment == 'both') }}
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
