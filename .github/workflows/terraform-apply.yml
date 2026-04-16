@@ -51,18 +51,27 @@ jobs:
             echo "Could not resolve TFSTATE storage account in resource group ${RG}." >&2
             exit 1
           fi
+          KEY="$(az storage account keys list -g "${RG}" -n "${SA}" --query "[0].value" -o tsv)"
+          if [[ -z "${KEY}" ]]; then
+            echo "Could not read access key for storage account ${SA}." >&2
+            exit 1
+          fi
+          echo "::add-mask::${KEY}"
           echo "rg=${RG}" >> "$GITHUB_OUTPUT"
           echo "container=${CONTAINER}" >> "$GITHUB_OUTPUT"
           echo "storage_account=${SA}" >> "$GITHUB_OUTPUT"
+          echo "access_key=${KEY}" >> "$GITHUB_OUTPUT"
 
       - name: Terraform init
         working-directory: infra/terraform/envs/dev
         run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ steps.tfstate_dev.outputs.rg }}" \
-            -backend-config="storage_account_name=${{ steps.tfstate_dev.outputs.storage_account }}" \
-            -backend-config="container_name=${{ steps.tfstate_dev.outputs.container }}" \
-            -backend-config="use_azuread_auth=true"
+          cat > backend.hcl <<'EOF'
+          resource_group_name  = "${{ steps.tfstate_dev.outputs.rg }}"
+          storage_account_name = "${{ steps.tfstate_dev.outputs.storage_account }}"
+          container_name       = "${{ steps.tfstate_dev.outputs.container }}"
+          access_key           = "${{ steps.tfstate_dev.outputs.access_key }}"
+          EOF
+          terraform init -backend-config=backend.hcl
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
@@ -106,18 +115,27 @@ jobs:
             echo "Could not resolve TFSTATE storage account in resource group ${RG}." >&2
             exit 1
           fi
+          KEY="$(az storage account keys list -g "${RG}" -n "${SA}" --query "[0].value" -o tsv)"
+          if [[ -z "${KEY}" ]]; then
+            echo "Could not read access key for storage account ${SA}." >&2
+            exit 1
+          fi
+          echo "::add-mask::${KEY}"
           echo "rg=${RG}" >> "$GITHUB_OUTPUT"
           echo "container=${CONTAINER}" >> "$GITHUB_OUTPUT"
           echo "storage_account=${SA}" >> "$GITHUB_OUTPUT"
+          echo "access_key=${KEY}" >> "$GITHUB_OUTPUT"
 
       - name: Terraform init
         working-directory: infra/terraform/envs/prod
         run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ steps.tfstate_prod.outputs.rg }}" \
-            -backend-config="storage_account_name=${{ steps.tfstate_prod.outputs.storage_account }}" \
-            -backend-config="container_name=${{ steps.tfstate_prod.outputs.container }}" \
-            -backend-config="use_azuread_auth=true"
+          cat > backend.hcl <<'EOF'
+          resource_group_name  = "${{ steps.tfstate_prod.outputs.rg }}"
+          storage_account_name = "${{ steps.tfstate_prod.outputs.storage_account }}"
+          container_name       = "${{ steps.tfstate_prod.outputs.container }}"
+          access_key           = "${{ steps.tfstate_prod.outputs.access_key }}"
+          EOF
+          terraform init -backend-config=backend.hcl
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/prod
