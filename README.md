@@ -18,6 +18,14 @@ A production-style Azure Cloud reference template that uses Terraform and GitHub
 
 More detail: see [`docs/architecture.md`](docs/architecture.md).
 
+## Environments and flow
+- **dev**
+  - Deploy infra by running the `terraform-apply` workflow with `environment=dev`
+  - App deploy runs automatically after a successful `apply-dev` via the `deploy-app-dev` job (zip deploy)
+- **prod**
+  - Deploy infra by running the `terraform-apply` workflow with `environment=prod` (or `both`)
+  - Use GitHub **Environments** for approvals/controls
+
 ## Repo layout
 - `infra/terraform/`: Terraform modules + environment compositions
 - `app/functions/`: sample Functions app
@@ -38,20 +46,102 @@ More detail: see [`docs/architecture.md`](docs/architecture.md).
    - `terraform apply`
 
 ## Quickstart (GitHub Actions)
-1. Create an Azure service principal (SP) and grant access (documented).
-2. Set GitHub Secrets:
-   - `AZURE_CLIENT_ID`
-   - `AZURE_TENANT_ID`
-   - `AZURE_SUBSCRIPTION_ID`
-   - `AZURE_CLIENT_SECRET`
-   - `TFSTATE_RESOURCE_GROUP` (e.g. `rg-tfstate`)
-   - `TFSTATE_STORAGE_ACCOUNT` (from `infra/terraform/shared/state` outputs)
-   - `TFSTATE_CONTAINER` (default `tfstate`)
-3. Open a PR to see `terraform plan`; merge to `main` to apply to `dev`.
+This repo uses **OIDC** with `azure/login` (no `AZURE_CLIENT_SECRET` required).
+
+1. Configure GitHub OIDC in Azure and grant permissions.
+   - Runbook: [`docs/runbooks/bootstrap-github-secrets.md`](docs/runbooks/bootstrap-github-secrets.md)
+2. Set GitHub **Secrets** or **Variables** (workflows read either).
+   - **Azure auth**
+     - `AZURE_CLIENT_ID`
+     - `AZURE_TENANT_ID`
+     - `AZURE_SUBSCRIPTION_ID`
+   - **Terraform remote state**
+     - `TFSTATE_RESOURCE_GROUP` (default `rg-tfstate`)
+     - `TFSTATE_STORAGE_ACCOUNT` (optional; auto-discovered by tag `purpose=terraform-state`)
+     - `TFSTATE_CONTAINER` (default `tfstate`)
+3. Open a PR to get a Terraform plan via `terraform-plan`.
+4. Deploy via `terraform-apply` (manual dispatch recommended):
+   - `environment=dev | prod | both`
+   - `reset=true` for a **hard reset** (delete tfstate blob + delete resource group) and recreate cleanly
+
+## End-to-end test (APIM → Function → Service Bus)
+### Call the API via APIM
+By default, APIM requires a **subscription key** (header `Ocp-Apim-Subscription-Key`). The demo API is exposed under:
+
+- **Default path**: `/demo/ping`
+
+#### 1) Discover APIM gateway URL
+
+```bash
+RG_DEV="rg-cce-dev"
+APIM_NAME=$(az apim list -g "$RG_DEV" --query "[0].name" -o tsv)
+APIM_GATEWAY=$(az apim show -g "$RG_DEV" -n "$APIM_NAME" --query gatewayUrl -o tsv)
+echo "$APIM_GATEWAY"
+```
+
+#### 2) Create a subscription for `demo-api` and fetch its key
+
+```bash
+RG_DEV="rg-cce-dev"
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+APIM_NAME=$(az apim list -g "$RG_DEV" --query "[0].name" -o tsv)
+
+SID="e2e-demo-api"
+SUB_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_DEV}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/subscriptions/${SID}"
+
+az rest --method put \
+  --uri "https://management.azure.com${SUB_RESOURCE_ID}?api-version=2022-08-01" \
+  --body '{
+    "properties": {
+      "displayName": "E2E demo-api",
+      "scope": "/apis/demo-api",
+      "state": "active",
+      "allowTracing": false
+    }
+  }' >/dev/null
+
+KEY=$(az rest --method post \
+  --uri "https://management.azure.com${SUB_RESOURCE_ID}/listSecrets?api-version=2022-08-01" \
+  --query primaryKey -o tsv)
+
+echo "$KEY"
+```
+
+#### 3) Call the endpoint
+
+```bash
+RG_DEV="rg-cce-dev"
+APIM_NAME=$(az apim list -g "$RG_DEV" --query "[0].name" -o tsv)
+APIM_GATEWAY=$(az apim show -g "$RG_DEV" -n "$APIM_NAME" --query gatewayUrl -o tsv)
+
+curl -sS -H "Ocp-Apim-Subscription-Key: $KEY" \
+  "$APIM_GATEWAY/demo/ping"
+```
+
+Expected:
+- HTTP **200**
+- JSON contains `"ok": true` and usually `"queued": true`
+
+### Verify the message was enqueued in Service Bus
+
+```bash
+RG_DEV="rg-cce-dev"
+SB_NAME=$(az servicebus namespace list -g "$RG_DEV" --query "[0].name" -o tsv)
+QUEUE_NAME=$(az servicebus queue list -g "$RG_DEV" --namespace-name "$SB_NAME" --query "[0].name" -o tsv)
+
+az servicebus queue show -g "$RG_DEV" --namespace-name "$SB_NAME" --name "$QUEUE_NAME" \
+  --query "countDetails.activeMessageCount" -o tsv
+```
 
 ## Environments
-- **dev**: auto-apply on merge
-- **prod**: protected with GitHub Environments + manual approval
+- See **Environments and flow** above.
+
+## Permissions notes (optional features)
+- **RBAC role assignments**:
+  - Creation is disabled by default (`enable_rbac_role_assignments=false`) to avoid requiring `Owner` / `User Access Administrator`
+  - If enabled, the Terraform runner identity must be able to write role assignments (`Microsoft.Authorization/roleAssignments/write`)
+- **Azure Policy**:
+  - Disabled by default (policy definitions require elevated permissions)
 
 ## Notes
 - The template is **subscription-scoped by default**, but the docs include guidance for **management-group scope** (enterprise landing zones).
