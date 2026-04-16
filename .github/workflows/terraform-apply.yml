@@ -78,8 +78,19 @@ jobs:
         run: |
           set -euo pipefail
           cd infra/terraform/envs/dev
-          RG="$(terraform console <<< 'module.rg.name' | tr -d '\r')"
-          APIM_NAME="$(terraform console <<< 'local.apim_name' | tr -d '\r')"
+          SUFFIX="$(terraform state show -no-color random_string.suffix | python - <<'PY'
+import re,sys
+txt=sys.stdin.read().splitlines()
+for line in txt:
+  m=re.match(r'\\s*result\\s*=\\s*\"([a-z0-9]+)\"\\s*$', line)
+  if m:
+    print(m.group(1))
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+)"
+          RG="rg-cce-dev"
+          APIM_NAME="apim-cce-dev-${SUFFIX}"
           SUB_ID="${ARM_SUBSCRIPTION_ID}"
           if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
             if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
@@ -175,8 +186,19 @@ jobs:
         run: |
           set -euo pipefail
           cd infra/terraform/envs/prod
-          RG="$(terraform console <<< 'module.rg.name' | tr -d '\r')"
-          APIM_NAME="$(terraform console <<< 'local.apim_name' | tr -d '\r')"
+          SUFFIX="$(terraform state show -no-color random_string.suffix | python - <<'PY'
+import re,sys
+txt=sys.stdin.read().splitlines()
+for line in txt:
+  m=re.match(r'\\s*result\\s*=\\s*\"([a-z0-9]+)\"\\s*$', line)
+  if m:
+    print(m.group(1))
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+)"
+          RG="rg-cce-prod"
+          APIM_NAME="apim-cce-prod-${SUFFIX}"
           SUB_ID="${ARM_SUBSCRIPTION_ID}"
           if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
             if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
