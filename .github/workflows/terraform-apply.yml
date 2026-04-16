@@ -73,6 +73,17 @@ jobs:
           EOF
           terraform init -backend-config=backend.hcl
 
+      - name: Break stale state lock (dev)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az storage blob lease break \
+            --account-name "${{ steps.tfstate_dev.outputs.storage_account }}" \
+            --account-key "${{ steps.tfstate_dev.outputs.access_key }}" \
+            --container-name "${{ steps.tfstate_dev.outputs.container }}" \
+            --blob-name "dev.terraform.tfstate" \
+            --break-period 0 || true
+
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
         run: terraform apply -auto-approve
@@ -136,6 +147,17 @@ jobs:
           access_key           = "${{ steps.tfstate_prod.outputs.access_key }}"
           EOF
           terraform init -backend-config=backend.hcl
+
+      - name: Break stale state lock (prod)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az storage blob lease break \
+            --account-name "${{ steps.tfstate_prod.outputs.storage_account }}" \
+            --account-key "${{ steps.tfstate_prod.outputs.access_key }}" \
+            --container-name "${{ steps.tfstate_prod.outputs.container }}" \
+            --blob-name "prod.terraform.tfstate" \
+            --break-period 0 || true
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/prod
