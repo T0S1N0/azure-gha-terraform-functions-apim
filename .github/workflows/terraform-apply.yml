@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           cd infra/terraform/envs/dev
-          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c 'import re,sys; txt=sys.stdin.read().splitlines();\nimport sys\nfor line in txt:\n m=re.match(r\"\\\\s*result\\\\s*=\\\\s*\\\"([a-z0-9]+)\\\"\\\\s*$\", line)\n if m:\n  print(m.group(1)); sys.exit(0)\nsys.exit(1)')"
+          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c 'import re,sys; txt=sys.stdin.read().splitlines(); m=next((re.match(r\"\\s*result\\s*=\\s*\\\"([a-z0-9]+)\\\"\\s*$\", l) for l in txt if re.match(r\"\\s*result\\s*=\\s*\\\"([a-z0-9]+)\\\"\\s*$\", l)), None); print(m.group(1) if m else \"\"); sys.exit(0 if m else 1)')"
           RG="rg-cce-dev"
           APIM_NAME="apim-cce-dev-${SUFFIX}"
           SUB_ID="${ARM_SUBSCRIPTION_ID}"
@@ -176,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           cd infra/terraform/envs/prod
-          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c 'import re,sys; txt=sys.stdin.read().splitlines();\nimport sys\nfor line in txt:\n m=re.match(r\"\\\\s*result\\\\s*=\\\\s*\\\"([a-z0-9]+)\\\"\\\\s*$\", line)\n if m:\n  print(m.group(1)); sys.exit(0)\nsys.exit(1)')"
+          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c 'import re,sys; txt=sys.stdin.read().splitlines(); m=next((re.match(r\"\\s*result\\s*=\\s*\\\"([a-z0-9]+)\\\"\\s*$\", l) for l in txt if re.match(r\"\\s*result\\s*=\\s*\\\"([a-z0-9]+)\\\"\\s*$\", l)), None); print(m.group(1) if m else \"\"); sys.exit(0 if m else 1)')"
           RG="rg-cce-prod"
           APIM_NAME="apim-cce-prod-${SUFFIX}"
           SUB_ID="${ARM_SUBSCRIPTION_ID}"
