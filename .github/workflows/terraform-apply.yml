@@ -88,6 +88,32 @@ jobs:
           echo "storage_account=${SA}" >> "$GITHUB_OUTPUT"
           echo "access_key=${KEY}" >> "$GITHUB_OUTPUT"
 
+      - name: Hard reset (dev) - delete state blob & resource group
+        if: ${{ inputs.reset }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RG="rg-cce-dev"
+          ACCOUNT="${{ steps.tfstate_dev.outputs.storage_account }}"
+          KEY="${{ steps.tfstate_dev.outputs.access_key }}"
+          CONTAINER="${{ steps.tfstate_dev.outputs.container }}"
+          BLOB="dev.terraform.tfstate"
+
+          az storage blob lease break \
+            --account-name "${ACCOUNT}" \
+            --account-key "${KEY}" \
+            --container-name "${CONTAINER}" \
+            --blob-name "${BLOB}" || true
+
+          az storage blob delete \
+            --account-name "${ACCOUNT}" \
+            --account-key "${KEY}" \
+            --container-name "${CONTAINER}" \
+            --name "${BLOB}" || true
+
+          az group delete -n "${RG}" --yes --no-wait || true
+          az group wait -n "${RG}" --deleted --timeout 1800 || true
+
       - name: Terraform init
         working-directory: infra/terraform/envs/dev
         run: |
@@ -130,9 +156,6 @@ jobs:
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
         run: |
-          if [[ "${{ inputs.reset }}" == "true" ]]; then
-            terraform destroy -auto-approve -lock-timeout=10m
-          fi
           terraform apply -auto-approve -lock-timeout=10m
 
   deploy-app-dev:
@@ -289,6 +312,32 @@ jobs:
           echo "storage_account=${SA}" >> "$GITHUB_OUTPUT"
           echo "access_key=${KEY}" >> "$GITHUB_OUTPUT"
 
+      - name: Hard reset (prod) - delete state blob & resource group
+        if: ${{ inputs.reset }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RG="rg-cce-prod"
+          ACCOUNT="${{ steps.tfstate_prod.outputs.storage_account }}"
+          KEY="${{ steps.tfstate_prod.outputs.access_key }}"
+          CONTAINER="${{ steps.tfstate_prod.outputs.container }}"
+          BLOB="prod.terraform.tfstate"
+
+          az storage blob lease break \
+            --account-name "${ACCOUNT}" \
+            --account-key "${KEY}" \
+            --container-name "${CONTAINER}" \
+            --blob-name "${BLOB}" || true
+
+          az storage blob delete \
+            --account-name "${ACCOUNT}" \
+            --account-key "${KEY}" \
+            --container-name "${CONTAINER}" \
+            --name "${BLOB}" || true
+
+          az group delete -n "${RG}" --yes --no-wait || true
+          az group wait -n "${RG}" --deleted --timeout 1800 || true
+
       - name: Terraform init
         working-directory: infra/terraform/envs/prod
         run: |
@@ -316,8 +365,5 @@ jobs:
       - name: Terraform apply
         working-directory: infra/terraform/envs/prod
         run: |
-          if [[ "${{ inputs.reset }}" == "true" ]]; then
-            terraform destroy -auto-approve -lock-timeout=10m
-          fi
           terraform apply -auto-approve -lock-timeout=10m
 
