@@ -1,0 +1,16 @@
+{
+  "name": "functions-apim-servicebus-demo",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "func start",
+    "lint": "node -c src/functions/ping.js"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.6.0",
+    "@azure/identity": "^4.2.1",
+    "@azure/service-bus": "^7.9.0"
+  }
+}
+

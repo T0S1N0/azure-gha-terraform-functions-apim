@@ -1,0 +1,37 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Demo API (APIM -> Functions)",
+    "version": "1.0.0",
+    "description": "Minimal API used to demonstrate APIM routing to Azure Functions and enqueueing to Service Bus."
+  },
+  "paths": {
+    "/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "at": { "type": "string" },
+                    "queued": { "type": "boolean" }
+                  },
+                  "required": ["ok", "at"]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error"
+          }
+        }
+      }
+    }
+  }
+}
+

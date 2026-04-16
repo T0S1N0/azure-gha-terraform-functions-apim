@@ -1,0 +1,78 @@
+name: app-build-deploy
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "app/functions/**"
+      - ".github/workflows/app-build-deploy.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init (dev)
+        working-directory: infra/terraform/envs/dev
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ secrets.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.TFSTATE_CONTAINER }}"
+
+      - name: Read Terraform outputs (dev)
+        id: tfout
+        working-directory: infra/terraform/envs/dev
+        run: |
+          set -euo pipefail
+          RG=$(terraform output -raw resource_group_name)
+          FUNC=$(terraform output -raw function_app_name)
+          echo "resource_group=$RG" >> "$GITHUB_OUTPUT"
+          echo "function_app=$FUNC" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: app/functions
+        run: npm install --omit=dev
+
+      - name: Build deployment package
+        working-directory: app/functions
+        run: |
+          zip -r ../functionapp.zip . \
+            -x "**/.git/**" \
+            -x "**/local.settings.json"
+
+      - name: Zip deploy to Function App
+        run: |
+          az functionapp deployment source config-zip \
+            --resource-group "${{ steps.tfout.outputs.resource_group }}" \
+            --name "${{ steps.tfout.outputs.function_app }}" \
+            --src "app/functionapp.zip"
+
