@@ -18,6 +18,11 @@ on:
           - dev
           - prod
           - both
+      reset:
+        description: "Destroy and recreate selected environment resources"
+        required: true
+        default: false
+        type: boolean
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -26,11 +31,18 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: terraform-apply-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   apply-dev:
     runs-on: ubuntu-latest
     environment: dev
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.environment == 'dev' || inputs.environment == 'both') }}
+    concurrency:
+      group: terraform-apply-dev-${{ github.ref }}
+      cancel-in-progress: false
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
@@ -117,12 +129,121 @@ jobs:
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
-        run: terraform apply -auto-approve -lock-timeout=10m
+        run: |
+          if [[ "${{ inputs.reset }}" == "true" ]]; then
+            terraform destroy -auto-approve -lock-timeout=10m
+          fi
+          terraform apply -auto-approve -lock-timeout=10m
+
+  deploy-app-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    needs: [apply-dev]
+    if: ${{ needs.apply-dev.result == 'success' && github.event_name == 'workflow_dispatch' && (inputs.environment == 'dev' || inputs.environment == 'both') }}
+    concurrency:
+      group: deploy-app-dev-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+
+      - name: Resolve Terraform backend (dev)
+        id: tfstate_dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          RG="${{ vars.TFSTATE_RESOURCE_GROUP || secrets.TFSTATE_RESOURCE_GROUP || 'rg-tfstate' }}"
+          CONTAINER="${{ vars.TFSTATE_CONTAINER || secrets.TFSTATE_CONTAINER || 'tfstate' }}"
+          SA="${{ vars.TFSTATE_STORAGE_ACCOUNT || secrets.TFSTATE_STORAGE_ACCOUNT }}"
+          if [[ -z "${SA}" ]]; then
+            SA="$(az storage account list -g "${RG}" --query "[?tags.purpose=='terraform-state'].name | [0]" -o tsv)"
+          fi
+          if [[ -z "${SA}" ]]; then
+            echo "Could not resolve TFSTATE storage account in resource group ${RG}." >&2
+            exit 1
+          fi
+          KEY="$(az storage account keys list -g "${RG}" -n "${SA}" --query "[0].value" -o tsv)"
+          if [[ -z "${KEY}" ]]; then
+            echo "Could not read access key for storage account ${SA}." >&2
+            exit 1
+          fi
+          echo "::add-mask::${KEY}"
+          echo "rg=${RG}" >> "$GITHUB_OUTPUT"
+          echo "container=${CONTAINER}" >> "$GITHUB_OUTPUT"
+          echo "storage_account=${SA}" >> "$GITHUB_OUTPUT"
+          echo "access_key=${KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform init (dev)
+        working-directory: infra/terraform/envs/dev
+        run: |
+          cat > backend.hcl <<'EOF'
+          resource_group_name  = "${{ steps.tfstate_dev.outputs.rg }}"
+          storage_account_name = "${{ steps.tfstate_dev.outputs.storage_account }}"
+          container_name       = "${{ steps.tfstate_dev.outputs.container }}"
+          access_key           = "${{ steps.tfstate_dev.outputs.access_key }}"
+          EOF
+          terraform init -backend-config=backend.hcl
+
+      - name: Read Terraform outputs (dev)
+        id: tfout
+        working-directory: infra/terraform/envs/dev
+        run: |
+          set -euo pipefail
+          OUT="$(terraform output -json)"
+          RG="$(printf '%s' "$OUT" | jq -r '.resource_group_name.value // empty')"
+          FUNC="$(printf '%s' "$OUT" | jq -r '.function_app_name.value // empty')"
+          if [[ -z "${RG}" || -z "${FUNC}" ]]; then
+            echo "Terraform outputs not found yet for dev." >&2
+            exit 1
+          fi
+          echo "resource_group=${RG}" >> "$GITHUB_OUTPUT"
+          echo "function_app=${FUNC}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: app/functions
+        run: npm install --omit=dev
+
+      - name: Build deployment package
+        working-directory: app/functions
+        run: |
+          zip -r ../functionapp.zip . \
+            -x "**/.git/**" \
+            -x "**/local.settings.json"
+
+      - name: Zip deploy to Function App
+        run: |
+          az functionapp deployment source config-zip \
+            --resource-group "${{ steps.tfout.outputs.resource_group }}" \
+            --name "${{ steps.tfout.outputs.function_app }}" \
+            --src "app/functionapp.zip"
 
   apply-prod:
     runs-on: ubuntu-latest
     environment: prod
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.environment == 'prod' || inputs.environment == 'both' }}
+    concurrency:
+      group: terraform-apply-prod-${{ github.ref }}
+      cancel-in-progress: false
     env:
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
@@ -194,5 +315,9 @@ jobs:
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/prod
-        run: terraform apply -auto-approve -lock-timeout=10m
+        run: |
+          if [[ "${{ inputs.reset }}" == "true" ]]; then
+            terraform destroy -auto-approve -lock-timeout=10m
+          fi
+          terraform apply -auto-approve -lock-timeout=10m
 
