@@ -73,26 +73,6 @@ jobs:
           EOF
           terraform init -backend-config=backend.hcl
 
-      - name: Import existing APIM (dev) if needed
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd infra/terraform/envs/dev
-          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c "import re,sys; txt=sys.stdin.read(); m=re.search(r'result\\s*=\\s*\\\"([a-z0-9]+)\\\"', txt); print(m.group(1) if m else ''); sys.exit(0 if m else 1)")"
-          RG="rg-cce-dev"
-          APIM_NAME="apim-cce-dev-${SUFFIX}"
-          SUB_ID="${ARM_SUBSCRIPTION_ID}"
-          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
-            if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
-              terraform import "module.apim.azurerm_api_management.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}"
-            fi
-          fi
-          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management_api\.this$'; then
-            if az apim api show -g "${RG}" --service-name "${APIM_NAME}" --api-id "demo-api" >/dev/null 2>&1; then
-              terraform import "module.apim.azurerm_api_management_api.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/demo-api"
-            fi
-          fi
-
       - name: Break stale state lock (dev)
         shell: bash
         run: |
@@ -106,6 +86,26 @@ jobs:
 
           # Fallback: force-unlock a known stale lock id if it still exists.
           terraform -chdir=infra/terraform/envs/dev force-unlock -force "09f38d6b-b63c-c5ee-215a-29f84dc82e26" || true
+
+      - name: Import existing APIM (dev) if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd infra/terraform/envs/dev
+          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c "import re,sys; txt=sys.stdin.read(); m=re.search(r'result\\s*=\\s*\\\"([a-z0-9]+)\\\"', txt); print(m.group(1) if m else ''); sys.exit(0 if m else 1)")"
+          RG="rg-cce-dev"
+          APIM_NAME="apim-cce-dev-${SUFFIX}"
+          SUB_ID="${ARM_SUBSCRIPTION_ID}"
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
+            if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
+              terraform import -lock-timeout=10m "module.apim.azurerm_api_management.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}"
+            fi
+          fi
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management_api\.this$'; then
+            if az apim api show -g "${RG}" --service-name "${APIM_NAME}" --api-id "demo-api" >/dev/null 2>&1; then
+              terraform import -lock-timeout=10m "module.apim.azurerm_api_management_api.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/demo-api"
+            fi
+          fi
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
@@ -171,26 +171,6 @@ jobs:
           EOF
           terraform init -backend-config=backend.hcl
 
-      - name: Import existing APIM (prod) if needed
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd infra/terraform/envs/prod
-          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c "import re,sys; txt=sys.stdin.read(); m=re.search(r'result\\s*=\\s*\\\"([a-z0-9]+)\\\"', txt); print(m.group(1) if m else ''); sys.exit(0 if m else 1)")"
-          RG="rg-cce-prod"
-          APIM_NAME="apim-cce-prod-${SUFFIX}"
-          SUB_ID="${ARM_SUBSCRIPTION_ID}"
-          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
-            if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
-              terraform import "module.apim.azurerm_api_management.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}"
-            fi
-          fi
-          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management_api\.this$'; then
-            if az apim api show -g "${RG}" --service-name "${APIM_NAME}" --api-id "demo-api" >/dev/null 2>&1; then
-              terraform import "module.apim.azurerm_api_management_api.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/demo-api"
-            fi
-          fi
-
       - name: Break stale state lock (prod)
         shell: bash
         run: |
@@ -203,6 +183,26 @@ jobs:
             --break-period 0 || true
 
           terraform -chdir=infra/terraform/envs/prod force-unlock -force "09f38d6b-b63c-c5ee-215a-29f84dc82e26" || true
+
+      - name: Import existing APIM (prod) if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd infra/terraform/envs/prod
+          SUFFIX="$(terraform state show -no-color random_string.suffix | python -c "import re,sys; txt=sys.stdin.read(); m=re.search(r'result\\s*=\\s*\\\"([a-z0-9]+)\\\"', txt); print(m.group(1) if m else ''); sys.exit(0 if m else 1)")"
+          RG="rg-cce-prod"
+          APIM_NAME="apim-cce-prod-${SUFFIX}"
+          SUB_ID="${ARM_SUBSCRIPTION_ID}"
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
+            if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
+              terraform import -lock-timeout=10m "module.apim.azurerm_api_management.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}"
+            fi
+          fi
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management_api\.this$'; then
+            if az apim api show -g "${RG}" --service-name "${APIM_NAME}" --api-id "demo-api" >/dev/null 2>&1; then
+              terraform import -lock-timeout=10m "module.apim.azurerm_api_management_api.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/demo-api"
+            fi
+          fi
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/prod
