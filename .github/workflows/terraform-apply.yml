@@ -87,8 +87,7 @@ jobs:
             --account-name "${ACCOUNT}" \
             --account-key "${KEY}" \
             --container-name "${CONTAINER}" \
-            --blob-name "${BLOB}" \
-            --break-period 0 || true
+            --blob-name "${BLOB}" || true
 
           for i in $(seq 1 30); do
             STATUS="$(az storage blob show --account-name "${ACCOUNT}" --account-key "${KEY}" --container-name "${CONTAINER}" --name "${BLOB}" --query "properties.lease.status" -o tsv || true)"
@@ -97,11 +96,10 @@ jobs:
             fi
             sleep 2
           done
-          echo "State blob lease is still locked after waiting." >&2
-          exit 1
-
           # Fallback: force-unlock a known stale lock id if it still exists.
           terraform -chdir=infra/terraform/envs/dev force-unlock -force "09f38d6b-b63c-c5ee-215a-29f84dc82e26" || true
+          echo "State blob lease is still locked after waiting." >&2
+          exit 1
 
       - name: Terraform apply
         working-directory: infra/terraform/envs/dev
@@ -176,7 +174,7 @@ jobs:
             --account-key "${{ steps.tfstate_prod.outputs.access_key }}" \
             --container-name "${{ steps.tfstate_prod.outputs.container }}" \
             --blob-name "prod.terraform.tfstate" \
-            --break-period 0 || true
+            || true
 
           terraform -chdir=infra/terraform/envs/prod force-unlock -force "09f38d6b-b63c-c5ee-215a-29f84dc82e26" || true
 
