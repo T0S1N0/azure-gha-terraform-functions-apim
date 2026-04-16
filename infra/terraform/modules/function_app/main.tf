@@ -3,7 +3,7 @@ resource "azurerm_service_plan" "this" {
   resource_group_name = var.resource_group_name
   location            = var.location
   os_type             = "Linux"
-  sku_name            = "Y1"
+  sku_name            = var.plan_sku_name
   tags                = var.tags
 }
 
@@ -24,7 +24,7 @@ resource "azurerm_linux_function_app" "this" {
   }
 
   site_config {
-    always_on = false
+    always_on = true
 
     application_stack {
       node_version = "20"

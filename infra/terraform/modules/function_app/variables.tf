@@ -46,6 +46,12 @@ variable "servicebus_queue_name" {
   description = "Service Bus queue name."
 }
 
+variable "plan_sku_name" {
+  type        = string
+  description = "App Service plan SKU name for the Function App (e.g. EP1 for Premium)."
+  default     = "EP1"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Common tags."

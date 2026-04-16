@@ -73,6 +73,25 @@ jobs:
           EOF
           terraform init -backend-config=backend.hcl
 
+      - name: Import existing APIM (dev) if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd infra/terraform/envs/dev
+          RG="$(terraform console <<< 'module.rg.name' | tr -d '\r')"
+          APIM_NAME="$(terraform console <<< 'local.apim_name' | tr -d '\r')"
+          SUB_ID="${ARM_SUBSCRIPTION_ID}"
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
+            if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
+              terraform import "module.apim.azurerm_api_management.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}"
+            fi
+          fi
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management_api\.this$'; then
+            if az apim api show -g "${RG}" --service-name "${APIM_NAME}" --api-id "demo-api" >/dev/null 2>&1; then
+              terraform import "module.apim.azurerm_api_management_api.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/demo-api"
+            fi
+          fi
+
       - name: Break stale state lock (dev)
         shell: bash
         run: |
@@ -150,6 +169,25 @@ jobs:
           access_key           = "${{ steps.tfstate_prod.outputs.access_key }}"
           EOF
           terraform init -backend-config=backend.hcl
+
+      - name: Import existing APIM (prod) if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd infra/terraform/envs/prod
+          RG="$(terraform console <<< 'module.rg.name' | tr -d '\r')"
+          APIM_NAME="$(terraform console <<< 'local.apim_name' | tr -d '\r')"
+          SUB_ID="${ARM_SUBSCRIPTION_ID}"
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management\.this$'; then
+            if az apim show -g "${RG}" -n "${APIM_NAME}" >/dev/null 2>&1; then
+              terraform import "module.apim.azurerm_api_management.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}"
+            fi
+          fi
+          if ! terraform state list | grep -q '^module\.apim\.azurerm_api_management_api\.this$'; then
+            if az apim api show -g "${RG}" --service-name "${APIM_NAME}" --api-id "demo-api" >/dev/null 2>&1; then
+              terraform import "module.apim.azurerm_api_management_api.this" "/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/demo-api"
+            fi
+          fi
 
       - name: Break stale state lock (prod)
         shell: bash
