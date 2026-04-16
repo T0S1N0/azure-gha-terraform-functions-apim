@@ -77,10 +77,15 @@ jobs:
         working-directory: infra/terraform/envs/dev
         run: |
           set -euo pipefail
-          RG=$(terraform output -raw resource_group_name)
-          FUNC=$(terraform output -raw function_app_name)
-          echo "resource_group=$RG" >> "$GITHUB_OUTPUT"
-          echo "function_app=$FUNC" >> "$GITHUB_OUTPUT"
+          OUT="$(terraform output -json)"
+          RG="$(printf '%s' "$OUT" | jq -r '.resource_group_name.value // empty')"
+          FUNC="$(printf '%s' "$OUT" | jq -r '.function_app_name.value // empty')"
+          if [[ -z "${RG}" || -z "${FUNC}" ]]; then
+            echo "Terraform outputs not found yet. Ensure the terraform-apply workflow has completed successfully for dev." >&2
+            exit 1
+          fi
+          echo "resource_group=${RG}" >> "$GITHUB_OUTPUT"
+          echo "function_app=${FUNC}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
